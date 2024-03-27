@@ -1,0 +1,318 @@
+# Effect on water holding capacity variation on Budyko framework
+
+## Introduction
+
+The uptake of CO2 by plants is limited by the availability of soil water. 
+The water availability depends on various factors including root depth, soil texture and water storage capacity of the soil in plant’s rooting zone. 
+Global vegetation models often consider only the moisture content in the top 2m of soil. 
+[Stocker et al. 2023](https://www.nature.com/articles/s41561-023-01125-2) created a map which reflects the real state of the of soil moisture content. 
+
+Using this map the water holding capacity (WHC) is recalculated (referred as "new").
+The same analysis will be conducted in parallel using the new WHC and the WHC considering only 2m of root depth zone (referred as "old").
+
+### P model
+
+Gross primary production, actual evapotranspiration (AET) and potential evapotranspiration (PET) are calculated using the P model.
+The model, developed by [Stocker et al. 2020](https://gmd.copernicus.org/articles/13/1545/2020/) simulate the behavior of $C~3~$ plants.
+
+### Budyko relationship
+
+Budyko hypothesis states that in humid region, where precipitation is the dominant factor, the evapotranspiration is limited by the energy available, meanwhile on arid region the evapotranspiration is limited by the soil moisture, which is the water available in soil. Budyko in 1974 developed a mathematical relationship between the long-term mean AET over precipitation and PET over precipitation. This 2D representation simplifies the visual representation of the state  of a catchment.
+
+Boundaries condition are expressed as AET over precipitation should be less or equal to one (water limitation) and AET should be less or equal to PET (energy limitation).
+
+This relationship can be described using the formula which will not be used here. See equation 12.6 in textbook "Ecological Climatology: Concepts and Applications" for further clarification.
+
+The deviation from the relationship are caused by the vegetation ([Williams et al. 2012](https://experts.nau.edu/en/publications/climate-and-vegetation-controls-on-the-surface-water-balance-synt))
+
+## Data
+
+The FLUXNET database will be used as mainly source of data. 
+This database contains eddy covariance measurement of environmental conditions and gross primary production in 317 sites scattered across the world.
+
+The data are acquired using the covariance method. This micro-metereological methods uses the covariance of fluctuation in vertical wind velocity to accurately estimate the quantity of interest. [Baldocchi 2003](https://onlinelibrary.wiley.com/doi/abs/10.1046/j.1365-2486.2003.00629.x?casa_token=3J66iqJ4AooAAAAA:knL9hFWtxCWjZCCaUnESLLJY9xUi7j1Sl-OyN463x6rTAigpnVA90_Ahjf3XCpPD2qzwYFYw2MYVikk)
+
+The data are already pre-processed and can be found online on [Zenodo](https://zenodo.org/records/8403081).
+For each site, a CSV file and LSM file are provided. 
+The CSV file contains all the measurement with the temporal resolution of 30 minutes. The LSM file contains the meta information which are latitude, longitude, elevation and WHC
+
+The gap between the measurement are filled using the method [MDS](https://bg.copernicus.org/articles/15/5015/2018/).
+
+## Method
+
+Among all sites, 313 will be used. The discarded sites don't have the measurement of latent heat flux which will be the main variable of interest.
+
+The variable selected for the analysis are: air temperature, vapor pressure deficit, incoming shortwave radiation, net radiation, atmospheric pressure, rain, fraction of absorbed photosynthetically active radiation , CO2 level, gross primary production and latent heat flux.
+
+The half hourly data are converted to daily average data.
+latent heat flux is converted in equivalent mass of evaporated water using function convert_et in the package [cwd](https://github.com/geco-bern/cwd/tree/main). This value will be used as observation of evapotranspiration.
+To run the P model a single dataframe is created called driver data. For the dataframe structure refer to [articles](https://geco-bern.github.io/rsofun/articles/data_format.html).
+
+Two dataframes are created from the driver data, one with the old WHC and one with the new WHC.
+The P model in run for both dataframe to calculate AET and PET. 
+The interannual mean is calculated for each variable.
+
+two final dataframes will be used in the results paragraph. 
+The code used to generate the dataframes is not shown. Refer to the repo [Budyko_Pmodel](https://github.com/FrancescoGrossi-unimi/Budyko_Pmodel/tree/main) for further clarification.
+
+## Results
+
+```{r echo=FALSE, message=FALSE}
+# library and data loading
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(here)
+library(cowplot)
+old_adf <- readRDS(here("data","budyko_old_whc_ET.rds"))
+new_adf <- readRDS(here("data","budyko_new_whc_ET.rds"))
+```
+
+### Change in WHC and AET
+
+The first figure illustrate the variation in whc and aet 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# WHC new vs. old 
+plot_1 <-  data.frame(old_WHC = old_adf$whc, 
+           new_WHC = new_adf$whc) |>
+  ggplot(aes(old_WHC, new_WHC)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  xlim(0, NA) +
+  ylim(0, NA) +
+  xlab("old WHC (mm)") +
+  ylab("new WHC (mm)")
+plot_2 <- data.frame(old_AET = old_adf$aet, 
+           new_AET = new_adf$aet) |>
+  ggplot(aes(old_AET, new_AET)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  xlim(0, NA) +
+  ylim(0, NA) +
+  xlab("old AET (mm)") +
+  ylab("new AET (mm)")
+plot_grid(plot_1, plot_2)
+```
+
+##### Figure 1. Comparison in whc.
+
+The change in WHC is scattered and uncorrelated and the new WHC is less distributed. On the other hand, the change in AET present less variation and the data are well correlated.
+
+By showing the AET variation over WHC variation is possible to observe a general trend; the higher the WHC the higher the AET and vice versa.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot_1 <- ggplot(data.frame(delta_whc = new_adf$whc- old_adf$whc,
+                  delta_aet = new_adf$aet -  old_adf$aet))+  
+  geom_point(aes(y = delta_aet, x = delta_whc)) +
+  labs( x= "\U2206 WHC (mm)", y= "\U2206 AET (mm)")
+ plot_2 <- ggplot(data.frame(delta_aet = new_adf$aet -  old_adf$aet,
+                             aridity= new_adf$pet/new_adf$prec_cond))+  
+  geom_point(aes(y = delta_aet, x = aridity))  +
+  labs( x= "PET / precipitation", y= "\U2206 AET (mm)")
+ 
+ plot_grid(plot_1, plot_2)
+```
+
+##### Figure 2. Delta (expressed as new - old) in whc over the change in aet and aet and variation in AET over aridity.
+
+For small variation in WHC is possible to observe a linear relationship between delta WHC and delta AET.
+Raising the aridity index (PET / precipitation) the variability in delta AET decrease.
+The deviations from the linear relationship may be caused by the soil moisture.
+
+### Observed ET over predicted AET
+
+The AET derived from the P model are compared with the ET that will be used as true value.
+Two linear fit are performed between AET and ET to asses which data set have better prediction.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# fit with old data
+fit <- lm(aet ~ ET, data= old_adf)
+
+r_squared <- as.numeric(sprintf("%.3f",cor(old_adf$ET,old_adf$aet, use = "complete.obs")^2))
+slope <- as.numeric(sprintf("%.3f",fit$coefficients[2]))
+intercept <- as.numeric(sprintf("%.3f",fit$coefficients[1]))
+
+plot_1 <- ggplot(old_adf,aes(x= ET,y=aet)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  labs(title = "ET vs predicted AET with old WHC",
+       subtitle = bquote("R "^2*" = "~.(r_squared)~
+                         " slope = "~.(slope)~
+                         " int = "~.(intercept))) +
+  xlab("ET (mm)") +
+  ylab("new AET (mm)") +
+  geom_smooth(method = "lm",color="red", se=FALSE)
+
+# fit with new data
+fit <- lm(aet ~ ET, data= new_adf)
+
+r_squared <- as.numeric(sprintf("%.3f",cor(new_adf$ET,new_adf$aet, use = "complete.obs")^2))
+slope <- as.numeric(sprintf("%.3f",fit$coefficients[2]))
+intercept <- as.numeric(sprintf("%.3f",fit$coefficients[1]))
+
+
+plot_2 <- ggplot(new_adf,aes(x= ET,y=aet)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+labs(title = "ET vs predicted AET with new WHC",
+       subtitle = bquote("R "^2*" = "~.(r_squared)~
+                         " slope = "~.(slope)~
+                         " int = "~.(intercept))) +
+  xlab("ET (mm)") +
+  ylab("new AET (mm)") +
+  geom_smooth(method = "lm",color="red", se=FALSE)
+
+plot_grid(plot_1, plot_2)
+```
+
+##### Figure 3. Linear fit between AET and ET.
+
+The predicted AET in both cases is overestimated. The $r^2$ between the predicted AET using the WHC from Stocker and the observed ET is 0.51 meanwhile the $r^2$ between the predicted AET using the WHC from the previous work is 0.41.
+The points are less spread by using the new AET
+
+### Budyko relationship and mathematical fitting
+
+Using the Fu equation is possible to fit the data retrieving the so called Budyko curve.
+The original article is chinese only, so we are referring to [Li et al. 2013](https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/wrcr.20107).
+
+$$
+AET/precipitation = 1 + PET/precipitation - (1 + (PET/precipitation)^\omega)^{1/\omega}
+$$
+
+```{r echo=FALSE}
+fit_fun = function(x,omega){
+  return( 1 + x - (1 + (x)^omega)^(1/omega))}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# fit with old whc
+old_fit <- nls(aet/prec_cond ~ (exp(a*(1-(pet/prec_cond)^-1))-1)/(exp(a*(1-(pet/prec_cond)^-1))-((pet/prec_cond)^-1)), data = old_adf,start = list(a = 2.3))
+
+plot_fit <- data.frame(obs = old_adf$aet/old_adf$prec_cond, pred= fit_fun(old_adf$pet/old_adf$prec_cond, coef(old_fit)))
+
+param = lm(pred ~ obs, data= plot_fit)
+
+r_squared <- as.numeric(format(cor(plot_fit$obs ,plot_fit$pred, 
+                                              use = "complete.obs")^2, digits=2))
+coeff <- as.numeric(format(coef(old_fit), digits=2))
+slope <- as.numeric(format(param$coefficients[2],digits=2))
+intercept <- as.numeric(format(param$coefficients[1],digits=2))
+
+
+plot_1 <- ggplot(plot_fit, aes(x= obs, y= pred)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  geom_smooth(method = "lm", colour = "red", se = FALSE) + 
+  labs( title = "Budyko fit with old whc", 
+        subtitle = bquote("R "^2*" = "~.(r_squared)~
+                          " coef = "~.(coeff)~
+                          " slope = "~.(slope)~
+                          " int = "~.(intercept))) +
+  xlab("obs (mm)") +
+  ylab("pred (mm)")
+
+# fit with new whc
+new_fit <- nls(aet/prec_cond ~ (exp(a*(1-(pet/prec_cond)^-1))-1)/(exp(a*(1-(pet/prec_cond)^-1))-((pet/prec_cond)^-1)), data = new_adf,start = list(a = 2.3))
+
+plot_fit <- data.frame(obs = new_adf$aet/new_adf$prec_cond, pred= fit_fun(new_adf$pet/new_adf$prec_cond, coef(new_fit)))
+
+param = lm(pred ~ obs, data= plot_fit)
+
+r_squared <- as.numeric(format(cor(plot_fit$obs ,plot_fit$pred, 
+                                              use = "complete.obs")^2, digits=2))
+coeff <- as.numeric(format(coef(new_fit), digits=2))
+slope <- as.numeric(format(param$coefficients[2],digits=2))
+intercept <- as.numeric(format(param$coefficients[1],digits=2))
+
+
+plot_2 <- ggplot(plot_fit, aes(x= obs, y= pred)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  geom_smooth(method = "lm", colour = "red", se = FALSE) + 
+    labs( title = "Budyko fit with new whc", 
+        subtitle = bquote("R "^2*" ="~.(r_squared)~
+                          " coef ="~.(coeff)~
+                          " slope ="~.(slope)~
+                          " int ="~.(intercept))) +
+  ylab("pred (mm)")+
+  xlab("obs (mm)")
+
+plot_grid(plot_1, plot_2)
+```
+
+##### Figure 4. mathematical fitting of Fu equation.
+
+The $\omega$ represent the free parameter to fit, [Li et al.](https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/wrcr.20107) found that the parameter depends on normalized difference vegetation index (NVDI) is equal to:
+
+$2,3*(NVDI - NVDI~min~)/(NVDI~max~ - NVDI~min~) + 1.16$. 
+
+In this analysis the vegetation parameter is not considered.
+The $r^2$ is almost identical, 0.66 with old WHC and 0.69.
+The fitted coefficient should have a maximum value of 3.46, which is out of range in case with old WHC and in range with new WHC.
+
+The fitted line capture the Budyko relationship but not the individual variability, using the old WHC more point are clustered around the water boundary condition.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot_1 <- ggplot(old_adf) +
+  geom_point(aes(x = pet/prec_cond, y = aet/prec_cond)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  geom_hline(yintercept = 1, linetype = "dotted") +
+  geom_line(aes(x = seq(0.5,4,length.out=dim(old_adf)[1]),
+                y = fit_fun(seq(0.5,4,length.out=dim(old_adf)[1]), coef(old_fit)))
+            ,color = "red") +
+  ylim(0, NA) +
+  xlim(0, NA) + 
+  xlab("PET / prec") +
+  ylab("AET / prec") + 
+  ggtitle("Budyko curve with old WHC")
+
+plot_2 <- ggplot(new_adf) +
+  geom_point(aes(x = pet/prec_cond, y = aet/prec_cond)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  geom_hline(yintercept = 1, linetype = "dotted") +
+  geom_line(aes(x = seq(0.5,4,length.out=dim(new_adf)[1]),
+                y = fit_fun(seq(0.5,4,length.out=dim(new_adf)[1]), coef(new_fit)))
+            ,color = "red") +
+  ylim(0, NA) +
+  xlim(0, NA) + 
+  xlab("PET / prec ") +
+  ylab("AET / prec ") + 
+  ggtitle("Budyko curve with new WHC")
+
+plot_grid(plot_1, plot_2)
+```
+
+##### Figure 5. Curve representation on Budyko curve.
+
+
+### Supplementary figure
+
+These figure don't seems to be correct
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(new_adf) +
+  geom_point(aes(x = pet/prec_cond, y = ET/prec_cond)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  geom_hline(yintercept = 1, linetype = "dotted") +
+  ylim(0, NA) +
+  xlim(0, NA) +
+  xlab("PET / prec ") +
+  ylab("ET / prec ") + 
+  ggtitle("Budyko with observed ET")
+```
+
+##### Supp. figure 1 Budyko relationship using the oberved ET
+
+The data don't represent a Budyko relationship but rather are more scattered
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(new_adf, aes(x= 1-(aet/pet),y=ET/pet))+
+  geom_point() +
+  ylab("ET/PET") +
+  xlab("1-(AET/PET)")
+```
+
+##### Supp. figure 2 ratio between observed ET over PET and predicted AET over PET
+
+This graph should have an exponential decay

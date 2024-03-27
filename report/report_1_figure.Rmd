@@ -1,0 +1,185 @@
+```{r}
+# library and data loading
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(here)
+library(cowplot)
+costant_whc <- readRDS(here("data","costant_whc.rds"))
+variable_whc <- readRDS(here("data","variable_whc.rds"))
+```
+
+### Change in WHC and AET
+
+
+```{r}
+# WHC new vs. old 
+plot_1 <-  data.frame(old_WHC = costant_whc$whc, 
+           new_WHC = variable_whc$whc) |>
+  ggplot(aes(old_WHC, new_WHC)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  xlim(0, NA) +
+  ylim(0, NA) +
+  xlab("Constant WHC (mm)") +
+  ylab("variable WHC (mm)")
+plot_2 <- data.frame(old_AET = costant_whc$aet, 
+           new_AET = variable_whc$aet) |>
+  ggplot(aes(old_AET, new_AET)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  xlim(0, NA) +
+  ylim(0, NA) +
+  xlab("AET with cosntat WHC (mm)") +
+  ylab("AET with variable WHC (mm)")
+plot_grid(plot_1, plot_2)
+```
+
+
+```{r}
+ggplot(data.frame(delta_whc = variable_whc$whc- costant_whc$whc,
+                  delta_aet = variable_whc$aet -  costant_whc$aet))+  
+  geom_point(aes(y = delta_aet, x = delta_whc)) +
+  labs( x= "\U2206 WHC (mm)", y= "\U2206 AET (mm)")
+```
+
+
+```{r}
+# fit with old data
+fit <- lm(aet ~ ET, data= costant_whc)
+
+r_squared <- as.numeric(sprintf("%.3f",cor(costant_whc$ET,costant_whc$aet, use = "complete.obs")^2))
+slope <- as.numeric(sprintf("%.3f",fit$coefficients[2]))
+intercept <- as.numeric(sprintf("%.3f",fit$coefficients[1]))
+
+plot_1 <- ggplot(costant_whc,aes(x= ET,y=aet)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  labs(title = "ET vs predicted AET with costant WHC",
+       subtitle = bquote("R "^2*" = "~.(r_squared)~
+                         " slope = "~.(slope)~
+                         " int = "~.(intercept))) +
+  xlab("ET (mm)") +
+  ylab("new AET (mm)") +
+  geom_smooth(method = "lm",color="red", se=FALSE)
+
+# fit with new data
+fit <- lm(aet ~ ET, data= variable_whc)
+
+r_squared <- as.numeric(sprintf("%.3f",cor(variable_whc$ET,variable_whc$aet, use = "complete.obs")^2))
+slope <- as.numeric(sprintf("%.3f",fit$coefficients[2]))
+intercept <- as.numeric(sprintf("%.3f",fit$coefficients[1]))
+
+
+plot_2 <- ggplot(variable_whc,aes(x= ET,y=aet)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+labs(title = "ET vs predicted AET with variable WHC",
+       subtitle = bquote("R "^2*" = "~.(r_squared)~
+                         " slope = "~.(slope)~
+                         " int = "~.(intercept))) +
+  xlab("ET (mm)") +
+  ylab("new AET (mm)") +
+  geom_smooth(method = "lm",color="red", se=FALSE)
+
+plot_grid(plot_1, plot_2)
+```
+
+
+### Budyko relationship and mathematical fitting
+
+```{r }
+fit_fun = function(x,omega){
+  return( 1 + x - (1 + (x)^omega)^(1/omega))}
+```
+
+```{r }
+# fit with old whc
+old_fit <- nls(aet/prec_cond ~ (1 + pet/prec_cond)-(1 + (pet/prec_cond)^a)^(1/a)
+               , data = costant_whc,start = list(a = 2.3))
+
+plot_fit <- data.frame(obs = costant_whc$aet/costant_whc$prec_cond, pred= fit_fun(costant_whc$pet/costant_whc$prec_cond, coef(old_fit)))
+
+param = lm(pred ~ obs, data= plot_fit)
+
+r_squared <- as.numeric(format(cor(plot_fit$obs ,plot_fit$pred, 
+                                              use = "complete.obs")^2, digits=2))
+coeff <- as.numeric(format(coef(old_fit), digits=2))
+slope <- as.numeric(format(param$coefficients[2],digits=2))
+intercept <- as.numeric(format(param$coefficients[1],digits=2))
+
+
+plot_1 <- ggplot(plot_fit, aes(x= obs, y= pred)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  geom_smooth(method = "lm", colour = "red", se = FALSE) + 
+  labs( title = "Budyko fit with costant whc", 
+        subtitle = bquote("R "^2*" = "~.(r_squared)~
+                          " coef = "~.(coeff)~
+                          " slope = "~.(slope)~
+                          " int = "~.(intercept))) +
+  xlab("obs (mm)") +
+  ylab("pred (mm)")
+
+# fit with new whc
+new_fit <- nls(aet/prec_cond ~ 
+                 (1 + pet/prec_cond)-(1 + (pet/prec_cond)^a)^(1/a), 
+               data = variable_whc,start = list(a = 2.3))
+
+plot_fit <- data.frame(obs = variable_whc$aet/variable_whc$prec_cond, pred= fit_fun(variable_whc$pet/variable_whc$prec_cond, coef(new_fit)))
+
+param = lm(pred ~ obs, data= plot_fit)
+
+r_squared <- as.numeric(format(cor(plot_fit$obs ,plot_fit$pred, 
+                                              use = "complete.obs")^2, digits=2))
+coeff <- as.numeric(format(coef(new_fit), digits=2))
+slope <- as.numeric(format(param$coefficients[2],digits=2))
+intercept <- as.numeric(format(param$coefficients[1],digits=2))
+
+
+plot_2 <- ggplot(plot_fit, aes(x= obs, y= pred)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  geom_smooth(method = "lm", colour = "red", se = FALSE) + 
+    labs( title = "Budyko fit with variable whc", 
+        subtitle = bquote("R "^2*" ="~.(r_squared)~
+                          " coef ="~.(coeff)~
+                          " slope ="~.(slope)~
+                          " int ="~.(intercept))) +
+  ylab("pred (mm)")+
+  xlab("obs (mm)")
+
+plot_grid(plot_1, plot_2)
+```
+
+
+```{r}
+plot_1 <- ggplot(costant_whc) +
+  geom_point(aes(x = pet/prec_cond, y = aet/prec_cond)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  geom_hline(yintercept = 1, linetype = "dotted") +
+  geom_line(aes(x = seq(0.5,4,length.out=dim(costant_whc)[1]),
+                y = fit_fun(seq(0.5,4,length.out=dim(costant_whc)[1]), coef(old_fit)))
+            ,color = "red") +
+  ylim(0, NA) +
+  xlim(0, NA) + 
+  xlab("PET / prec") +
+  ylab("AET / prec") + 
+  ggtitle("Budyko curve with costant WHC")
+
+plot_2 <- ggplot(variable_whc) +
+  geom_point(aes(x = pet/prec_cond, y = aet/prec_cond)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  geom_hline(yintercept = 1, linetype = "dotted") +
+  geom_line(aes(x = seq(0.5,4,length.out=dim(variable_whc)[1]),
+                y = fit_fun(seq(0.5,4,length.out=dim(variable_whc)[1]), coef(new_fit)))
+            ,color = "red") +
+  ylim(0, NA) +
+  xlim(0, NA) + 
+  xlab("PET / prec ") +
+  ylab("AET / prec ") + 
+  ggtitle("Budyko curve with variable WHC")
+
+plot_grid(plot_1, plot_2)
+```
+
